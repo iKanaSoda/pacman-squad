@@ -1,0 +1,1008 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pac-Man vs. the Squad</title>
+<meta name="description" content="Pac-Man where the four ghosts share one plan: they split up, block your exits, guard the power pellets and squeeze the space you can reach.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #050a24;          /* maze floor */
+    --panel: #0b1438;        /* side panel */
+    --panel-edge: #1e2c6e;
+    --wall: #3d5cff;
+    --text: #d6ddff;
+    --text-dim: #8d98cc;
+    --pac: #ffd23f;
+    --blinky: #ff3b3b;
+    --pinky: #ff8ad8;
+    --inky: #3be8ff;
+    --clyde: #ffa63b;
+    --focus: #ffd23f;
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font: 400 16px/1.5 "Chakra Petch", system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  header {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: var(--s6) var(--s4) var(--s4);
+  }
+  h1 {
+    font: 700 clamp(28px, 5vw, 44px)/1.05 "Silkscreen", monospace;
+    margin: 0 0 var(--s3);
+    color: var(--pac);
+    letter-spacing: 0.01em;
+  }
+  h1 .vs { color: var(--text-dim); font-weight: 400; }
+  h1 .squad { display: inline-flex; gap: 0.12em; }
+  h1 .squad span:nth-child(1) { color: var(--blinky); }
+  h1 .squad span:nth-child(2) { color: var(--pinky); }
+  h1 .squad span:nth-child(3) { color: var(--inky); }
+  h1 .squad span:nth-child(4) { color: var(--clyde); }
+  header p { margin: 0; max-width: 62ch; color: var(--text-dim); }
+  header p strong { color: var(--pac); font-weight: 500; }
+
+  .layout {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: var(--s4) var(--s4) var(--s6);
+    display: grid;
+    grid-template-columns: minmax(0, 504px) minmax(0, 1fr);
+    gap: var(--s6);
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: minmax(0, 1fr); max-width: 536px; }
+  }
+
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: var(--s4);
+    margin-bottom: var(--s2);
+    font-family: "Silkscreen", monospace;
+  }
+  .hud .stat { display: flex; flex-direction: column; }
+  .hud .stat small { font-family: "Chakra Petch", sans-serif; font-size: 13px; color: var(--text-dim); }
+  .hud .stat b { font-size: 20px; font-weight: 400; line-height: 1.1; }
+  .lives { display: flex; gap: var(--s1); min-height: 22px; align-items: center; }
+
+  .stage { position: relative; }
+  .board {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 28 / 31;
+    touch-action: none;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--panel-edge);
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--s3);
+    text-align: center;
+    padding: var(--s5);
+    background: rgba(5, 10, 36, 0.78);
+  }
+  .overlay[hidden] { display: none; }
+  .overlay h2 { font: 700 26px/1.1 "Silkscreen", monospace; margin: 0; color: var(--pac); }
+  .overlay p { margin: 0; max-width: 34ch; color: var(--text); }
+  .btn {
+    font: 600 16px/1 "Chakra Petch", sans-serif;
+    color: var(--ink);
+    background: var(--pac);
+    border: 0;
+    border-radius: 4px;
+    padding: var(--s3) var(--s5);
+    cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .hint { font-size: 14px; color: var(--text-dim); }
+
+  .dpad {
+    display: none;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: var(--s1);
+    justify-content: center;
+    margin-top: var(--s4);
+  }
+  @media (pointer: coarse) { .dpad { display: grid; } }
+  .dpad button {
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 6px;
+    font-size: 20px;
+    touch-action: none;
+  }
+  .dpad .up { grid-area: 1 / 2; } .dpad .left { grid-area: 2 / 1; }
+  .dpad .right { grid-area: 2 / 3; } .dpad .down { grid-area: 3 / 2; }
+
+  /* ---------- side panel ---------- */
+  aside {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: var(--s4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s5);
+  }
+  aside h2 { font: 500 15px/1.3 "Chakra Petch", sans-serif; margin: 0 0 var(--s2); color: var(--text-dim); }
+
+  .brain { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+  .brain button {
+    text-align: left;
+    font: inherit;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    padding: var(--s2) var(--s3);
+    cursor: pointer;
+  }
+  .brain button b { display: block; font-weight: 600; }
+  .brain button span { display: block; font-size: 13px; line-height: 1.35; color: var(--text-dim); }
+  .brain button[aria-pressed="true"] { border-color: var(--pac); background: rgba(255, 210, 63, 0.08); }
+  .brain button[aria-pressed="true"] b { color: var(--pac); }
+
+  .room-num { font: 400 40px/1 "Silkscreen", monospace; color: var(--pac); }
+  .room-num small { font: 400 15px "Chakra Petch", sans-serif; color: var(--text-dim); margin-left: var(--s1); }
+  .room-bar { height: 6px; background: #17225a; border-radius: 3px; margin: var(--s2) 0; overflow: hidden; }
+  .room-bar i { display: block; height: 100%; width: 100%; background: var(--pac); transition: width 0.2s linear; }
+  .room p { margin: 0 0 var(--s2); font-size: 14px; color: var(--text-dim); }
+  .toggle { display: flex; gap: var(--s2); align-items: center; font-size: 14px; cursor: pointer; }
+  .toggle input { accent-color: var(--pac); width: 16px; height: 16px; }
+
+  .roster { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+  .roster li { display: grid; grid-template-columns: 14px 64px 1fr; gap: var(--s2); align-items: center; font-size: 14px; }
+  .roster .dot { width: 12px; height: 12px; border-radius: 6px 6px 2px 2px; }
+  .roster .name { font-weight: 600; }
+  .roster .role { color: var(--text-dim); }
+
+  .log {
+    list-style: none; margin: 0; padding: 0;
+    height: 168px; overflow-y: auto;
+    font-size: 14px; line-height: 1.4;
+    display: flex; flex-direction: column; gap: var(--s1);
+  }
+  .log li { color: var(--text); }
+  .log li b { font-weight: 600; margin-right: var(--s1); }
+  .log li.empty { color: var(--text-dim); }
+
+  .keys { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: var(--s1) var(--s3); font-size: 14px; }
+  .keys dt { color: var(--text); }
+  .keys dd { margin: 0; color: var(--text-dim); }
+  kbd {
+    font: 500 12px/1 "Chakra Petch", sans-serif;
+    border: 1px solid var(--panel-edge); border-bottom-width: 2px;
+    border-radius: 3px; padding: 2px 5px; background: #0f1a48;
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pac-Man <span class="vs">vs.</span> <span class="squad"><span>t</span><span>h</span><span>e</span></span> Squad</h1>
+  <p>These ghosts share one plan. They split up, block your exits, guard the power pellets and squeeze the space you can reach first. The <strong>yellow glow</strong> is your escape room: every tile you can get to before any ghost.</p>
+</header>
+
+<main class="layout">
+  <section class="stage" aria-label="Game">
+    <div class="hud">
+      <div class="stat"><small>Score</small><b id="score">0</b></div>
+      <div class="stat"><small>Level</small><b id="level">1</b></div>
+      <div class="stat"><small>Best</small><b id="high">0</b></div>
+      <div class="stat"><small>Lives</small><div class="lives" id="lives"></div></div>
+    </div>
+    <div class="board" id="board">
+      <canvas id="game" width="896" height="992" role="img" aria-label="Pac-Man maze"></canvas>
+      <div class="overlay" id="overlay">
+        <h2 id="ov-title">Ready to run?</h2>
+        <p id="ov-text">Eat every pellet. The squad will try to box you in.</p>
+        <button class="btn" id="ov-btn" type="button">Start game</button>
+        <span class="hint" id="ov-hint">or press Enter</span>
+      </div>
+    </div>
+    <div class="dpad" aria-label="Direction pad">
+      <button class="up" data-dir="0" aria-label="Up">▲</button>
+      <button class="left" data-dir="1" aria-label="Left">◀</button>
+      <button class="right" data-dir="3" aria-label="Right">▶</button>
+      <button class="down" data-dir="2" aria-label="Down">▼</button>
+    </div>
+  </section>
+
+  <aside>
+    <section>
+      <h2>Ghost brain</h2>
+      <div class="brain">
+        <button type="button" data-brain="squad" aria-pressed="true"><b>Squad</b><span>One shared plan. Traps, cut-offs, pellet guards.</span></button>
+        <button type="button" data-brain="classic" aria-pressed="false"><b>Classic</b><span>The 1980 rules. Each ghost hunts alone.</span></button>
+      </div>
+    </section>
+
+    <section class="room">
+      <h2>Your escape room</h2>
+      <div class="room-num"><span id="room">–</span><small>tiles</small></div>
+      <div class="room-bar"><i id="room-bar"></i></div>
+      <p>Tiles you reach before any ghost. At zero, you are trapped.</p>
+      <label class="toggle"><input type="checkbox" id="show-room" checked> Show on maze</label>
+    </section>
+
+    <section>
+      <h2>Roster</h2>
+      <ul class="roster" id="roster"></ul>
+    </section>
+
+    <section>
+      <h2>Squad channel</h2>
+      <ul class="log" id="log" aria-live="polite"><li class="empty">Quiet. Start a game to hear the plan.</li></ul>
+    </section>
+
+    <section>
+      <h2>Controls</h2>
+      <dl class="keys">
+        <dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>Move (or WASD, or swipe)</dd>
+        <dt><kbd>P</kbd></dt><dd>Pause</dd>
+        <dt><kbd>Enter</kbd></dt><dd>Start</dd>
+      </dl>
+    </section>
+  </aside>
+</main>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= Maze ================= */
+// # wall, . pellet, o power pellet, space = open, H = ghost house, - = door, X = outside void
+const MAP = [
+"############################",
+"#............##............#",
+"#.####.#####.##.#####.####.#",
+"#o####.#####.##.#####.####o#",
+"#.####.#####.##.#####.####.#",
+"#..........................#",
+"#.####.##.########.##.####.#",
+"#.####.##.########.##.####.#",
+"#......##....##....##......#",
+"######.##### ## #####.######",
+"XXXXX#.##### ## #####.#XXXXX",
+"XXXXX#.##          ##.#XXXXX",
+"XXXXX#.## ###--### ##.#XXXXX",
+"######.## #HHHHHH# ##.######",
+"      .   #HHHHHH#   .      ",
+"######.## #HHHHHH# ##.######",
+"XXXXX#.## ######## ##.#XXXXX",
+"XXXXX#.##          ##.#XXXXX",
+"XXXXX#.## ######## ##.#XXXXX",
+"######.## ######## ##.######",
+"#............##............#",
+"#.####.#####.##.#####.####.#",
+"#.####.#####.##.#####.####.#",
+"#o..##.......  .......##..o#",
+"###.##.##.########.##.##.###",
+"###.##.##.########.##.##.###",
+"#......##....##....##......#",
+"#.##########.##.##########.#",
+"#.##########.##.##########.#",
+"#..........................#",
+"############################"
+];
+const W = 28, H = 31, T = 16, N = W * H;
+const CELLS = MAP.join('');
+const id = (c, r) => r * W + c;
+const col = i => i % W;
+const row = i => (i / W) | 0;
+const isOpen = i => { const k = CELLS[i]; return k === '.' || k === 'o' || k === ' '; };
+const isGhostOpen = i => isOpen(i) || CELLS[i] === 'H' || CELLS[i] === '-';
+
+// directions: 0 up, 1 left, 2 down, 3 right (classic tie-break order)
+const DX = [0, -1, 0, 1], DY = [-1, 0, 1, 0];
+const opp = d => (d + 2) % 4;
+function step(i, d) {
+  const r = row(i) + DY[d];
+  if (r < 0 || r >= H) return -1;
+  return id((col(i) + DX[d] + W) % W, r);
+}
+
+const NODES = [];
+for (let i = 0; i < N; i++) if (isOpen(i)) NODES.push(i);
+
+function bfs(src, ok, out) {
+  out.fill(65535);
+  const q = new Int32Array(N); let h = 0, t = 0;
+  out[src] = 0; q[t++] = src;
+  while (h < t) {
+    const u = q[h++];
+    for (let d = 0; d < 4; d++) {
+      const v = step(u, d);
+      if (v >= 0 && ok(v) && out[v] === 65535) { out[v] = out[u] + 1; q[t++] = v; }
+    }
+  }
+  return out;
+}
+// All-pairs shortest paths on the open maze (the squad's shared map knowledge).
+const DIST = new Uint16Array(N * N);
+for (const s of NODES) bfs(s, isOpen, DIST.subarray(s * N, s * N + N));
+const dist = (a, b) => DIST[a * N + b];
+
+const EXIT = id(13, 11), HOME = id(13, 14), PAC_START = id(13, 23);
+const exitMap = bfs(EXIT, isGhostOpen, new Uint16Array(N));
+const homeMap = bfs(HOME, isGhostOpen, new Uint16Array(N));
+const POWER_SPOTS = [];
+for (let i = 0; i < N; i++) if (CELLS[i] === 'o') POWER_SPOTS.push(i);
+const spotName = i => (row(i) < 15 ? 'upper' : 'lower') + '-' + (col(i) < 14 ? 'left' : 'right');
+
+/* ================= State ================= */
+const GHOSTS = [
+  { name: 'Blinky', color: '#ff3b3b', start: EXIT, corner: [25, -4] },
+  { name: 'Pinky',  color: '#ff8ad8', start: HOME, corner: [2, -4] },
+  { name: 'Inky',   color: '#3be8ff', start: id(11, 14), corner: [27, 31] },
+  { name: 'Clyde',  color: '#ffa63b', start: id(15, 14), corner: [0, 31] },
+];
+const RELEASE = { squad: [0, 1.2, 2.6, 4], classic: [0, 2, 6, 10] };
+const MODES = [7, 20, 7, 20, 5, 20, 5, Infinity]; // classic scatter/chase cycle
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let high = 0;
+try { high = parseInt(localStorage.getItem('pacsquad.high') || '0', 10) || 0; } catch (e) {}
+
+const S = {
+  phase: 'menu', phaseTime: 0, paused: false,
+  brain: 'squad', showRoom: true,
+  score: 0, lives: 3, level: 1, nextLife: 10000,
+  pellets: new Uint8Array(N), left: 0,
+  roundTime: 0, fright: 0, frightDur: 0, combo: 0, freeze: 0,
+  modeIdx: 0, modeTime: 0,
+  popups: [], anim: 0,
+  room: new Uint8Array(N), roomSize: 0, roomTimer: 0,
+  roomBucket: 0, lastBucketLog: -10, spotOwned: {},
+};
+const pac = { from: PAC_START, dir: -1, t: 0, want: 1, face: 1, mouth: 0 };
+const ghosts = GHOSTS.map(g => ({ ...g, from: g.start, dir: -1, t: 0, state: 'house', fright: false, role: 'In base', release: 0, bob: 0 }));
+
+const target = m => (m.dir < 0 ? m.from : step(m.from, m.dir));
+const pos = m => ({ x: col(m.from) + (m.dir < 0 ? 0 : DX[m.dir] * m.t), y: row(m.from) + (m.dir < 0 ? 0 : DY[m.dir] * m.t) });
+
+const pacSpeed = () => (S.fright > 0 ? 8.4 : 7.6) + Math.min(0.4, 0.05 * (S.level - 1));
+function ghostSpeed(g) {
+  if (g.state === 'eyes') return 15;
+  if (g.state === 'leaving') return 4.5;
+  if (g.fright) return 4.2;
+  let s = S.brain === 'squad' ? Math.min(7.5, 6.8 + 0.12 * (S.level - 1)) : Math.min(7.2, 6.6 + 0.12 * (S.level - 1));
+  const r = row(g.from), c = col(g.from);
+  if (r === 14 && (c <= 5 || c >= 22)) s *= 0.55; // tunnel drag
+  return s;
+}
+
+/* ================= Squad planner =================
+   The squad treats the chase as a territory game. For every open tile it works
+   out who can get there first: Pac-Man or the nearest ghost. Pac-Man's "escape
+   room" is the set of tiles he can reach, along a path, strictly before any ghost.
+   Whenever a ghost reaches a junction, it tries each move it could make and picks
+   the one that leaves Pac-Man the smallest escape room, with heavy penalties for
+   any power pellet still inside it. Because every ghost scores moves against the
+   same picture (including where its teammates are headed), they naturally split
+   up: one presses, the others seal the exits on the far side. */
+const gtime = new Float32Array(N), gbase = new Float32Array(N);
+const seen = new Int32Array(N), qd = new Float32Array(N), qq = new Int32Array(N);
+let stamp = 1;
+
+function hunterSources(except) {
+  const out = [];
+  for (const h of ghosts) {
+    if (h === except || h.fright) continue;
+    const sp = S.brain === 'squad' ? Math.min(7.5, 6.8 + 0.12 * (S.level - 1)) : 6.8;
+    if (h.state === 'active') out.push({ tile: target(h), off: h.dir < 0 ? 0 : 1 - h.t, sp });
+    else if (h.state === 'leaving') out.push({ tile: EXIT, off: exitMap[target(h)] + (1 - h.t), sp: 4.5 });
+  }
+  return out;
+}
+function fillBase(srcs) {
+  gbase.fill(Infinity);
+  for (const s of srcs) {
+    const base = s.tile * N;
+    for (const n of NODES) {
+      const tt = (s.off + DIST[base + n]) / s.sp;
+      if (tt < gbase[n]) gbase[n] = tt;
+    }
+  }
+}
+// Flood-fill the tiles Pac-Man can reach before the ghosts (times in gtime).
+function pacRegion(times, mark) {
+  stamp++;
+  const ps = pacSpeed(), margin = 0.06;
+  let h = 0, t = 0, size = 0, power = 0;
+  const push = (i, d) => {
+    if (seen[i] === stamp) return;
+    if (d / ps >= times[i] - margin) return;
+    seen[i] = stamp; qq[t] = i; qd[t] = d; t++;
+  };
+  if (pac.dir >= 0) {
+    if (pac.t < 0.5) { push(pac.from, pac.t); push(target(pac), 1 - pac.t); }
+    else { push(target(pac), 1 - pac.t); push(pac.from, pac.t); }
+  } else push(pac.from, 0);
+  while (h < t) {
+    const u = qq[h], d = qd[h]; h++;
+    size++;
+    if (S.pellets[u] === 2) power++;
+    if (mark) mark[u] = 1;
+    for (let k = 0; k < 4; k++) {
+      const v = step(u, k);
+      if (v >= 0 && isOpen(v)) push(v, d + 1);
+    }
+  }
+  return { size, power };
+}
+
+function squadChoose(g, opts) {
+  const pt = target(pac);
+  fillBase(hunterSources(g));
+  const sp = ghostSpeed(g) || 6.8;
+  const others = ghosts.filter(h => h !== g && h.state === 'active').map(target);
+  let best = opts[0], bestScore = Infinity, bestPower = 0, scores = [];
+  for (const d of opts) {
+    const o = step(g.from, d), base = o * N;
+    for (const n of NODES) {
+      const tt = (1 + DIST[base + n]) / sp;
+      gtime[n] = tt < gbase[n] ? tt : gbase[n];
+    }
+    const r = pacRegion(gtime, null);
+    let score = r.size + r.power * 60 + 0.01 * dist(o, pt);
+    if (others.includes(o)) score += 4; // don't stack on a teammate
+    scores.push({ d, o, score, power: r.power });
+    if (score < bestScore) { bestScore = score; best = d; bestPower = r.power; }
+  }
+  // Explain the decision for the roster.
+  let direct = scores[0];
+  for (const s of scores) if (dist(s.o, pt) < dist(direct.o, pt)) direct = s;
+  if (best === direct.d) g.role = dist(step(g.from, best), pt) < 6 ? 'Going in for the catch' : 'Pressing in';
+  else if (bestPower < direct.power) g.role = 'Guarding a power pellet';
+  else g.role = 'Cutting off an exit';
+  return best;
+}
+
+/* ================= Classic brains ================= */
+function classicTarget(g) {
+  const pc = col(pac.from), pr = row(pac.from), f = pac.face;
+  if (S.modeIdx % 2 === 0) { g.role = 'Heading to its corner'; return g.corner; }
+  switch (g.name) {
+    case 'Blinky': g.role = 'Chasing'; return [pc, pr];
+    case 'Pinky': g.role = 'Aiming ahead of you'; return [pc + DX[f] * 4, pr + DY[f] * 4];
+    case 'Inky': {
+      const b = ghosts[0], vx = pc + DX[f] * 2, vy = pr + DY[f] * 2;
+      g.role = 'Mirroring Blinky';
+      return [2 * vx - col(b.from), 2 * vy - row(b.from)];
+    }
+    default: {
+      const dx = col(g.from) - pc, dy = row(g.from) - pr;
+      if (dx * dx + dy * dy > 64) { g.role = 'Chasing'; return [pc, pr]; }
+      g.role = 'Wandering off'; return g.corner;
+    }
+  }
+}
+function classicChoose(g, opts) {
+  const [tx, ty] = classicTarget(g);
+  let best = opts[0], bd = Infinity;
+  for (const d of opts) {
+    const o = step(g.from, d), dx = col(o) - tx, dy = row(o) - ty, dd = dx * dx + dy * dy;
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  return best;
+}
+
+function fleeChoose(g, opts) {
+  const pt = target(pac);
+  let best = opts[0], bd = -Infinity;
+  for (const d of opts) {
+    const o = step(g.from, d), v = dist(o, pt) + Math.random() * 1.5;
+    if (v > bd) { bd = v; best = d; }
+  }
+  g.role = 'Running scared';
+  return best;
+}
+
+function chooseDir(g) {
+  if (g.state === 'leaving' || g.state === 'eyes') {
+    const map = g.state === 'leaving' ? exitMap : homeMap;
+    let best = -1, bv = map[g.from];
+    for (let d = 0; d < 4; d++) {
+      const v = step(g.from, d);
+      if (v >= 0 && isGhostOpen(v) && map[v] < bv) { bv = map[v]; best = d; }
+    }
+    g.dir = best;
+    g.role = g.state === 'eyes' ? 'Returning to base' : 'Leaving base';
+    return;
+  }
+  let opts = [];
+  for (let d = 0; d < 4; d++) {
+    const v = step(g.from, d);
+    if (v >= 0 && isOpen(v) && !(g.dir >= 0 && d === opp(g.dir))) opts.push(d);
+  }
+  if (!opts.length) for (let d = 0; d < 4; d++) { const v = step(g.from, d); if (v >= 0 && isOpen(v)) opts.push(d); }
+  if (opts.length === 1) { g.dir = opts[0]; return; }
+  if (g.fright) g.dir = fleeChoose(g, opts);
+  else g.dir = S.brain === 'squad' ? squadChoose(g, opts) : classicChoose(g, opts);
+}
+
+/* ================= Movement ================= */
+const canPac = (i, d) => { const j = step(i, d); return j >= 0 && isOpen(j); };
+
+function updatePac(dt) {
+  let move = pacSpeed() * dt, guard = 0;
+  while (move > 1e-6 && guard++ < 8) {
+    if (pac.dir < 0) {
+      if (pac.want >= 0 && canPac(pac.from, pac.want)) { pac.dir = pac.want; pac.face = pac.want; }
+      else break;
+    } else if (pac.want >= 0 && pac.want === opp(pac.dir)) {
+      pac.from = target(pac); pac.dir = pac.want; pac.face = pac.want; pac.t = 1 - pac.t;
+    }
+    const rem = 1 - pac.t;
+    if (move < rem) { pac.t += move; pac.mouth += move; move = 0; }
+    else {
+      move -= rem; pac.mouth += rem;
+      pac.from = target(pac); pac.t = 0;
+      eat(pac.from);
+      if (S.phase !== 'play') return;
+      if (pac.want >= 0 && canPac(pac.from, pac.want)) { pac.dir = pac.want; pac.face = pac.want; }
+      else if (!canPac(pac.from, pac.dir)) { pac.dir = -1; break; }
+    }
+  }
+}
+
+function reverse(g) {
+  if (g.dir < 0 || g.state !== 'active') return;
+  g.from = target(g); g.dir = opp(g.dir); g.t = 1 - g.t;
+}
+
+function updateGhost(g, dt) {
+  if (g.state === 'house') {
+    g.bob += dt;
+    if (S.roundTime >= g.release) { g.state = 'leaving'; g.dir = -1; } else return;
+  }
+  let move = ghostSpeed(g) * dt, guard = 0;
+  while (move > 1e-6 && guard++ < 8) {
+    if (g.dir < 0) { chooseDir(g); if (g.dir < 0) break; }
+    const rem = 1 - g.t;
+    if (move < rem) { g.t += move; move = 0; }
+    else {
+      move -= rem; g.from = target(g); g.t = 0;
+      if (g.state === 'leaving' && g.from === EXIT) {
+        g.state = 'active'; g.dir = 1;
+        if (S.roundTime < 6) say(g.name, S.brain === 'squad' ? deployLine(g) : 'Out of the box.');
+      } else if (g.state === 'eyes' && g.from === HOME) {
+        g.state = 'leaving'; g.fright = false; g.dir = -1;
+      }
+      chooseDir(g);
+    }
+  }
+}
+function deployLine(g) {
+  return { Blinky: 'On the target. I will push from behind.', Pinky: 'Out. Taking the far side.', Inky: 'Deployed. Covering the gaps.', Clyde: 'Out. Holding the lanes nobody has.' }[g.name];
+}
+
+/* ================= Rules ================= */
+function eat(i) {
+  const p = S.pellets[i];
+  if (!p) return;
+  S.pellets[i] = 0; S.left--;
+  addScore(p === 2 ? 50 : 10);
+  if (p === 2) startFright();
+  if (S.left === 0) { setPhase('clear'); say('Command', 'Board cleared. Regrouping for the next round.'); }
+}
+function addScore(n) {
+  S.score += n;
+  if (S.score >= S.nextLife) { S.lives++; S.nextLife += 10000; renderLives(); }
+  if (S.score > high) { high = S.score; try { localStorage.setItem('pacsquad.high', String(high)); } catch (e) {} }
+  hud();
+}
+function startFright() {
+  S.frightDur = Math.max(1.5, 6.5 - 0.7 * (S.level - 1));
+  S.fright = S.frightDur; S.combo = 0;
+  for (const g of ghosts) if (g.state === 'active') { g.fright = true; reverse(g); }
+  say('Command', S.brain === 'squad' ? 'Power pellet down. Scatter, keep distance, regroup when it wears off.' : 'Power pellet eaten.');
+}
+function checkCollisions() {
+  const p = pos(pac);
+  for (const g of ghosts) {
+    if (g.state === 'house' || g.state === 'eyes') continue;
+    const q = pos(g);
+    let dx = Math.abs(p.x - q.x); dx = Math.min(dx, W - dx);
+    const dy = p.y - q.y;
+    if (dx * dx + dy * dy > 0.45) continue;
+    if (g.fright) {
+      const pts = 200 * Math.pow(2, S.combo++);
+      addScore(pts);
+      S.popups.push({ x: q.x, y: q.y, text: String(pts), t: 0 });
+      g.fright = false; g.state = 'eyes'; g.dir = -1;
+      S.freeze = 0.45;
+      say(g.name, 'I am down. Heading back to base.');
+    } else {
+      S.lives--; renderLives();
+      say(g.name, S.brain === 'squad' ? 'Got Pac-Man. Trap closed.' : 'Caught you.');
+      setPhase('dying');
+      return;
+    }
+  }
+}
+
+function fillPellets() {
+  S.left = 0;
+  for (let i = 0; i < N; i++) {
+    S.pellets[i] = CELLS[i] === '.' ? 1 : CELLS[i] === 'o' ? 2 : 0;
+    if (S.pellets[i]) S.left++;
+  }
+}
+function resetRound() {
+  Object.assign(pac, { from: PAC_START, dir: -1, t: 0, want: 1, face: 1, mouth: 0 });
+  ghosts.forEach((g, k) => {
+    Object.assign(g, { from: g.start, dir: -1, t: 0, fright: false, bob: k, role: 'In base' });
+    g.state = k === 0 ? 'active' : 'house';
+    g.release = RELEASE[S.brain][k];
+  });
+  S.roundTime = 0; S.fright = 0; S.freeze = 0; S.modeIdx = 0; S.modeTime = 0; S.popups = [];
+  S.roomBucket = 0; S.spotOwned = {}; S.spotLogged = {};
+  computeRoom();
+}
+function newGame() {
+  Object.assign(S, { score: 0, lives: 3, level: 1, nextLife: 10000 });
+  logEl.innerHTML = '';
+  fillPellets(); resetRound(); hud(); renderLives();
+  say('Command', S.brain === 'squad' ? 'Squad, you have the map. Box Pac-Man in and guard the power pellets.' : 'Classic rules. Every ghost for itself.');
+  setPhase('ready');
+}
+function setPhase(p) {
+  S.phase = p; S.phaseTime = 0;
+  if (p === 'over') showOverlay('Caught', `Final score ${S.score.toLocaleString()}. The squad wins this one.`, 'Play again');
+  else if (p !== 'menu') hideOverlay();
+}
+
+/* ================= Escape room (overlay + log) ================= */
+function computeRoom() {
+  fillBase(hunterSources(null));
+  S.room.fill(0);
+  const r = pacRegion(gbase, S.room);
+  S.roomSize = r.size;
+  roomEl.textContent = S.fright > 0 ? '∞' : r.size;
+  roomBar.style.width = (S.fright > 0 ? 100 : Math.min(100, (r.size / NODES.length) * 100)) + '%';
+
+  if (S.brain !== 'squad' || S.phase !== 'play' || S.fright > 0) return;
+  const TH = [150, 80, 40, 15, 0];
+  let b = 0; for (const th of TH) if (r.size <= th) b++;
+  if (b > S.roomBucket) {
+    const lines = [
+      'Under 150 tiles. Spread out and hold the lanes.',
+      'Under 80. Close the side corridors.',
+      'Under 40. Nobody leaves their lane.',
+      'Under 15 tiles. Squeeze.',
+      'Every exit is sealed. Closing in.'];
+    say('Command', lines[b - 1]);
+    S.roomBucket = b;
+  }
+  for (const sp of POWER_SPOTS) {
+    if (S.pellets[sp] !== 2) continue;
+    const owned = !S.room[sp];
+    if (owned && S.spotOwned[sp] === false && !S.spotLogged[sp]) {
+      S.spotLogged[sp] = true;
+      let near = null, nd = Infinity;
+      for (const g of ghosts) if (g.state === 'active') { const d = dist(target(g), sp); if (d < nd) { nd = d; near = g; } }
+      if (near) say(near.name, `The ${spotName(sp)} power pellet is covered.`);
+    }
+    S.spotOwned[sp] = owned;
+  }
+}
+
+/* ================= Loop ================= */
+function update(dt) {
+  S.anim += dt;
+  for (const p of S.popups) p.t += dt;
+  S.popups = S.popups.filter(p => p.t < 0.9);
+  if (S.paused) return;
+  S.phaseTime += dt;
+  if (S.phase === 'ready') { if (S.phaseTime > 1.8) setPhase('play'); return; }
+  if (S.phase === 'dying') {
+    if (S.phaseTime > 1.7) {
+      if (S.lives <= 0) setPhase('over');
+      else { resetRound(); setPhase('ready'); }
+    }
+    return;
+  }
+  if (S.phase === 'clear') {
+    if (S.phaseTime > 2.2) { S.level++; fillPellets(); resetRound(); hud(); setPhase('ready'); }
+    return;
+  }
+  if (S.phase !== 'play') return;
+  if (S.freeze > 0) { S.freeze -= dt; return; }
+
+  S.roundTime += dt;
+  if (S.fright > 0) {
+    S.fright -= dt;
+    if (S.fright <= 0) { S.fright = 0; for (const g of ghosts) g.fright = false; if (S.brain === 'squad') say('Command', 'Power is off. Back to the plan.'); }
+  } else if (S.brain === 'classic') {
+    S.modeTime += dt;
+    if (S.modeTime >= MODES[S.modeIdx]) {
+      S.modeTime = 0; S.modeIdx++;
+      ghosts.forEach(reverse);
+      say('Command', S.modeIdx % 2 ? 'Chase.' : 'Scatter to corners.');
+    }
+  }
+
+  const n = Math.ceil(dt / (1 / 120));
+  const h = dt / n;
+  for (let k = 0; k < n && S.phase === 'play'; k++) {
+    updatePac(h);
+    if (S.phase !== 'play') break;
+    for (const g of ghosts) updateGhost(g, h);
+    checkCollisions();
+    if (S.freeze > 0) break;
+  }
+  S.roomTimer -= dt;
+  if (S.roomTimer <= 0) { S.roomTimer = 0.1; computeRoom(); renderRoster(); }
+}
+
+/* ================= Drawing ================= */
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+ctx.setTransform(cv.width / (W * T), 0, 0, cv.height / (H * T), 0, 0);
+
+function drawMaze() {
+  ctx.fillStyle = '#050a24';
+  ctx.fillRect(0, 0, W * T, H * T);
+  if (S.showRoom && S.fright <= 0 && (S.phase === 'play' || S.phase === 'ready')) {
+    ctx.fillStyle = 'rgba(255, 210, 63, 0.2)';
+    for (const i of NODES) if (S.room[i]) ctx.fillRect(col(i) * T, row(i) * T, T, T);
+  }
+  const flash = S.phase === 'clear' && Math.floor(S.phaseTime * 4) % 2 === 1;
+  ctx.fillStyle = '#0d1856';
+  for (let i = 0; i < N; i++) if (CELLS[i] === '#') ctx.fillRect(col(i) * T, row(i) * T, T, T);
+  ctx.strokeStyle = flash ? '#ffffff' : '#3d5cff';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'square';
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    if (CELLS[i] !== '#') continue;
+    const x = col(i) * T, y = row(i) * T;
+    for (let d = 0; d < 4; d++) {
+      const c = col(i) + DX[d], r = row(i) + DY[d];
+      if (c < 0 || c >= W || r < 0 || r >= H) continue;
+      const k = CELLS[id(c, r)];
+      if (k === '#' || k === 'X') continue;
+      if (d === 0) { ctx.moveTo(x, y + 1); ctx.lineTo(x + T, y + 1); }
+      if (d === 2) { ctx.moveTo(x, y + T - 1); ctx.lineTo(x + T, y + T - 1); }
+      if (d === 1) { ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + T); }
+      if (d === 3) { ctx.moveTo(x + T - 1, y); ctx.lineTo(x + T - 1, y + T); }
+    }
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#ff8ad8';
+  ctx.fillRect(13 * T, 12 * T + 6, 2 * T, 3);
+
+  const blink = reduceMotion || Math.floor(S.anim * 3) % 2 === 0 || S.phase !== 'play';
+  for (let i = 0; i < N; i++) {
+    const p = S.pellets[i];
+    if (!p) continue;
+    const cx = col(i) * T + T / 2, cy = row(i) * T + T / 2;
+    ctx.fillStyle = '#ffd9b0';
+    if (p === 1) ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
+    else if (blink) { ctx.beginPath(); ctx.arc(cx, cy, 5.5, 0, Math.PI * 2); ctx.fill(); }
+  }
+}
+
+function drawPac() {
+  const p = pos(pac);
+  const cx = (p.x + 0.5) * T, cy = (p.y + 0.5) * T, r = T * 0.62;
+  let open;
+  if (S.phase === 'dying') {
+    open = Math.min(Math.PI, 0.25 + (S.phaseTime / 1.2) * Math.PI);
+    if (open >= Math.PI) return;
+  } else open = 0.06 + 0.6 * Math.abs(Math.sin(pac.mouth * Math.PI * 0.9));
+  const a = [-Math.PI / 2, Math.PI, Math.PI / 2, 0][pac.face];
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, r, a + open / 2, a + Math.PI * 2 - open / 2);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawGhost(g) {
+  const p = pos(g);
+  let cx = (p.x + 0.5) * T, cy = (p.y + 0.5) * T;
+  if (g.state === 'house') { cx = (col(g.from) + 1) * T; cy += reduceMotion ? 0 : Math.sin(g.bob * 5) * 2; }
+  if (g.state === 'leaving' && g.from >= id(0, 12) && (col(g.from) === 13 || col(g.from) === 14) && row(g.from) <= 14) cx = (13 + 1) * T;
+  const r = T * 0.62, top = cy - 2;
+  const lookDir = g.dir < 0 ? 2 : g.dir;
+  if (g.state !== 'eyes') {
+    const flashing = g.fright && S.fright < 2 && Math.floor(S.fright * 5) % 2 === 0;
+    ctx.fillStyle = g.fright ? (flashing ? '#f2f2ff' : '#2a3bff') : g.color;
+    ctx.beginPath();
+    ctx.arc(cx, top, r, Math.PI, 0);
+    const bottom = cy + r - 1, wave = reduceMotion ? 0 : Math.floor(S.anim * 8) % 2;
+    ctx.lineTo(cx + r, bottom);
+    const seg = (2 * r) / 6;
+    for (let k = 1; k <= 6; k++) ctx.lineTo(cx + r - k * seg, bottom - (((k + wave) % 2) ? 3 : 0));
+    ctx.closePath();
+    ctx.fill();
+    if (g.fright) {
+      ctx.fillStyle = flashing ? '#ff3b3b' : '#ffd9b0';
+      ctx.fillRect(cx - 4, top - 1, 2.5, 2.5); ctx.fillRect(cx + 1.5, top - 1, 2.5, 2.5);
+      ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx - 6, cy + 4);
+      for (let k = 1; k <= 6; k++) ctx.lineTo(cx - 6 + k * 2, cy + 4 + (k % 2 ? -2 : 0));
+      ctx.stroke();
+      return;
+    }
+  }
+  for (const s of [-1, 1]) {
+    const ex = cx + s * 3.6, ey = top - 0.5;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(ex + DX[lookDir], ey + DY[lookDir], 2.8, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1b2bd6';
+    ctx.beginPath(); ctx.arc(ex + DX[lookDir] * 2.2, ey + DY[lookDir] * 2.2, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawText(text, color) {
+  ctx.font = '700 13px Silkscreen, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, 14 * T, 17.5 * T);
+}
+
+function draw() {
+  drawMaze();
+  if (S.phase !== 'menu') {
+    if (S.phase !== 'clear' && !(S.phase === 'dying' && S.phaseTime > 0.4)) ghosts.forEach(drawGhost);
+    drawPac();
+  }
+  ctx.font = '700 10px Silkscreen, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const p of S.popups) { ctx.fillStyle = '#3be8ff'; ctx.fillText(p.text, (p.x + 0.5) * T, (p.y + 0.5) * T - p.t * 8); }
+  if (S.phase === 'ready') drawText('READY!', '#ffd23f');
+  if (S.phase === 'over') drawText('GAME OVER', '#ff3b3b');
+  if (S.paused && S.phase !== 'menu' && S.phase !== 'over') drawText('PAUSED', '#d6ddff');
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+
+/* ================= UI ================= */
+const $ = s => document.getElementById(s);
+const scoreEl = $('score'), highEl = $('high'), levelEl = $('level'), livesEl = $('lives');
+const roomEl = $('room'), roomBar = $('room-bar'), rosterEl = $('roster'), logEl = $('log');
+const overlay = $('overlay'), ovTitle = $('ov-title'), ovText = $('ov-text'), ovBtn = $('ov-btn'), ovHint = $('ov-hint');
+
+function hud() {
+  scoreEl.textContent = S.score.toLocaleString();
+  highEl.textContent = high.toLocaleString();
+  levelEl.textContent = S.level;
+}
+function renderLives() {
+  const n = Math.max(0, S.lives);
+  livesEl.innerHTML = '';
+  livesEl.setAttribute('aria-label', `${n} lives`);
+  for (let k = 0; k < Math.min(n, 6); k++) {
+    livesEl.insertAdjacentHTML('beforeend', '<svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 10 L19 5 A9.5 9.5 0 1 0 19 15 Z" fill="#ffd23f"/></svg>');
+  }
+}
+rosterEl.innerHTML = ghosts.map(g => `<li><span class="dot" style="background:${g.color}"></span><span class="name">${g.name}</span><span class="role" id="role-${g.name}">In base</span></li>`).join('');
+function renderRoster() {
+  for (const g of ghosts) {
+    const el = $('role-' + g.name);
+    const role = g.state === 'house' ? 'In base' : g.role;
+    if (el.textContent !== role) el.textContent = role;
+  }
+}
+function say(who, text) {
+  const empty = logEl.querySelector('.empty');
+  if (empty) empty.remove();
+  const g = ghosts.find(x => x.name === who);
+  const li = document.createElement('li');
+  const b = document.createElement('b');
+  b.textContent = who + ':';
+  b.style.color = g ? g.color : '#ffd23f';
+  li.append(b, document.createTextNode(text));
+  logEl.prepend(li);
+  while (logEl.children.length > 40) logEl.lastChild.remove();
+}
+function showOverlay(title, text, btn) {
+  ovTitle.textContent = title; ovText.textContent = text; ovBtn.textContent = btn;
+  ovHint.textContent = btn === 'Resume' ? 'or press P' : 'or press Enter';
+  overlay.hidden = false;
+  ovBtn.focus({ preventScroll: true });
+}
+function hideOverlay() { overlay.hidden = true; }
+
+function start() {
+  S.paused = false;
+  newGame();
+  ovBtn.blur();
+}
+ovBtn.addEventListener('click', () => {
+  if (S.paused && S.phase !== 'over' && S.phase !== 'menu') { togglePause(); return; }
+  start();
+});
+
+function togglePause() {
+  if (S.phase === 'menu' || S.phase === 'over') return;
+  S.paused = !S.paused;
+  if (S.paused) showOverlay('Paused', 'The squad is holding position.', 'Resume');
+  else hideOverlay();
+}
+
+document.querySelectorAll('.brain button').forEach(b => b.addEventListener('click', () => {
+  const brain = b.dataset.brain;
+  if (brain === S.brain) return;
+  S.brain = brain;
+  document.querySelectorAll('.brain button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  S.modeIdx = 1; S.modeTime = 0;
+  if (S.phase !== 'menu' && S.phase !== 'over') say('Command', brain === 'squad' ? 'Switching to squad tactics. Shared plan is live.' : 'Switching to classic rules. Each ghost on its own.');
+  b.blur();
+}));
+$('show-room').addEventListener('change', e => { S.showRoom = e.target.checked; });
+
+const KEYS = { ArrowUp: 0, KeyW: 0, ArrowLeft: 1, KeyA: 1, ArrowDown: 2, KeyS: 2, ArrowRight: 3, KeyD: 3 };
+document.addEventListener('keydown', e => {
+  if (e.code in KEYS) {
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') document.activeElement.blur();
+    e.preventDefault();
+    pac.want = KEYS[e.code];
+    return;
+  }
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
+  if ((e.code === 'Enter' || e.code === 'Space') && (S.phase === 'menu' || S.phase === 'over')) {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'BUTTON' || tag === 'INPUT') return;
+    e.preventDefault();
+    start();
+  }
+});
+
+const board = $('board');
+let touch = null;
+board.addEventListener('touchstart', e => { const t = e.changedTouches[0]; touch = { x: t.clientX, y: t.clientY }; }, { passive: true });
+board.addEventListener('touchmove', e => {
+  if (!touch) return;
+  e.preventDefault();
+  const t = e.changedTouches[0], dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+  if (Math.abs(dx) < 18 && Math.abs(dy) < 18) return;
+  pac.want = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 3 : 1) : (dy > 0 ? 2 : 0);
+  touch = { x: t.clientX, y: t.clientY };
+}, { passive: false });
+board.addEventListener('touchend', () => { touch = null; });
+document.querySelectorAll('.dpad button').forEach(b => b.addEventListener('pointerdown', e => { e.preventDefault(); pac.want = +b.dataset.dir; }));
+
+document.addEventListener('visibilitychange', () => { if (document.hidden && S.phase === 'play' && !S.paused) togglePause(); });
+
+fillPellets(); resetRound(); hud(); renderLives();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
